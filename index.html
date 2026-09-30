@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Скетч лампы</title>
-<meta name="description" content="Интерактивная 3D-модель лампы: разбор деталей, сечение, план создания">
+<meta name="description" content="Интерактивная 3D-модель лампы">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💡</text></svg>">
 <style>
 :root{--bg:#f4f1ec;--panel:#ffffffee;--text:#2b2620;--muted:#7a7268;--accent:#d98a4a;--line:#e3ddd2;--chip:#efe9df;}
@@ -28,7 +28,8 @@ body:not(.show-list) #legend{display:none}
 .chip.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 #panel{position:fixed;right:10px;bottom:calc(56px + env(safe-area-inset-bottom,0px));width:270px;max-width:calc(100vw - 20px);max-height:52vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 16px;box-shadow:0 6px 24px #0003;transform:translateY(20px);opacity:0;pointer-events:none;transition:.2s}
 #panel.show{transform:translateY(0);opacity:1;pointer-events:auto}
-#panel h3{margin:0 0 6px;font-size:15px}
+#panel h3{margin:0 0 6px;font-size:15px;padding-right:36px}
+.pclose{position:sticky;top:0;float:right;margin:-6px -8px 0 0;width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:var(--chip);color:var(--text);font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
 #panel .row{margin:5px 0;font-size:12px;color:var(--muted)}
 #panel .row b{color:var(--text);font-weight:600}
 #panel ol{margin:6px 0 0;padding-left:16px;font-size:11.5px}
@@ -41,7 +42,7 @@ body:not(.show-list) #legend{display:none}
 <body>
 <canvas id="c"></canvas>
 <div id="topbar"><div class="t">💡 Скетч лампы</div><button class="btn" id="resetBtn">Сброс вида</button></div>
-<div id="hint">Тяни — вращение · Колесо/щипок — зум · Тап по детали — инфо · 👁 — список деталей</div>
+<div id="hint">Тап по детали — инфо · 👁 — список деталей</div>
 <div class="round" id="hudBtn" title="Скрыть/показать интерфейс">👁</div>
 <div id="zoomCtl"><div class="round" id="zin">+</div><div class="round" id="zout">–</div></div>
 <div id="legend"></div>
@@ -96,15 +97,17 @@ Object.keys(PARTS).forEach(k=>{const b=document.createElement('div');b.className
 const panel=document.getElementById('panel');
 function selectPart(key){const p=PARTS[key];if(!p)return;
  document.querySelectorAll('.chip').forEach(c=>c.classList.toggle('active',c.dataset.key===key));
- panel.innerHTML='<h3>'+p.name+'</h3><div class="row"><b>Размеры:</b> '+p.dims+'</div><div class="row"><b>Материал:</b> '+p.material+'</div><div class="row"><b>Толщина/зазор:</b> '+p.thick+'</div><div class="row"><b>План создания:</b></div><ol>'+p.steps.map(s=>'<li>'+s+'</li>').join('')+'</ol>';
+ panel.innerHTML='<button class="pclose" type="button" aria-label="Закрыть">✕</button><h3>'+p.name+'</h3><div class="row"><b>Размеры:</b> '+p.dims+'</div><div class="row"><b>Материал:</b> '+p.material+'</div><div class="row"><b>Толщина/зазор:</b> '+p.thick+'</div><div class="row"><b>План создания:</b></div><ol>'+p.steps.map(s=>'<li>'+s+'</li>').join('')+'</ol>';
  panel.classList.add('show');
  pickable.forEach(m=>{if(m.userData.key===key)m.material.emissive.set(0xffd27a);else m.material.emissive.copy(m.material.userData.baseEmissive);});
 }
+function closePanel(){panel.classList.remove('show');document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));pickable.forEach(m=>m.material.emissive.copy(m.material.userData.baseEmissive));}
+panel.addEventListener('click',e=>{if(e.target.closest('.pclose'))closePanel();});
 const ray=new THREE.Raycaster();
 function handleTap(e){const rect=renderer.domElement.getBoundingClientRect();
  const mx=((e.clientX-rect.left)/rect.width)*2-1,my=-((e.clientY-rect.top)/rect.height)*2+1;
  ray.setFromCamera({x:mx,y:my},cam);const hits=ray.intersectObjects(pickable);
- if(hits.length)selectPart(hits[0].object.userData.key);}
+ if(hits.length)selectPart(hits[0].object.userData.key);else closePanel();}
 let pointers={},lastDist=null,dragging=false,lastX=0,lastY=0,moved=false;
 const el=renderer.domElement;
 el.addEventListener('pointerdown',e=>{pointers[e.pointerId]={x:e.clientX,y:e.clientY};if(Object.keys(pointers).length===1){dragging=true;lastX=e.clientX;lastY=e.clientY;moved=false;}});
