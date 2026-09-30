@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Модель ночника WebLamp</title>
+<meta name="description" content="Интерактивная 3D-модель ночника WebLamp: разбор деталей, сечение, план создания">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💡</text></svg>">
+<style>
+:root{--bg:#f4f1ec;--panel:#ffffffee;--text:#2b2620;--muted:#7a7268;--accent:#d98a4a;--line:#e3ddd2;--chip:#efe9df;}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17140f;--panel:#211d17ee;--text:#f1ece2;--muted:#a89e8e;--accent:#e3a05f;--line:#3a3328;--chip:#2a251d;}}
+:root[data-theme="dark"]{--bg:#17140f;--panel:#211d17ee;--text:#f1ece2;--muted:#a89e8e;--accent:#e3a05f;--line:#3a3328;--chip:#2a251d;}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden}
+canvas{display:block;width:100%;height:100%;touch-action:none;background:var(--bg)}
+#topbar{position:fixed;top:calc(10px + env(safe-area-inset-top,0px));left:10px;right:10px;display:flex;gap:8px;flex-wrap:wrap;pointer-events:none}
+.t{font-weight:700;font-size:14px;background:var(--panel);padding:8px 12px;border-radius:12px;pointer-events:auto;box-shadow:0 2px 10px #0002}
+.btn{pointer-events:auto;background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:8px 12px;font-size:12.5px;cursor:pointer;box-shadow:0 2px 8px #0002}
+.btn:active{transform:scale(.96)}
+#hint{position:fixed;left:50%;transform:translateX(-50%);top:calc(52px + env(safe-area-inset-top,0px));font-size:10.5px;color:var(--muted);background:var(--panel);padding:5px 10px;border-radius:8px;pointer-events:none;text-align:center}
+#zoomCtl{position:fixed;right:10px;top:calc(54px + env(safe-area-inset-top,0px));display:flex;flex-direction:column;gap:6px;pointer-events:auto}
+#hudBtn{position:fixed;right:10px;top:calc(10px + env(safe-area-inset-top,0px));pointer-events:auto;z-index:5}
+body:not(.show-list) #legend{display:none}
+#hudBtn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.round{width:34px;height:34px;border-radius:50%;background:var(--panel);border:1px solid var(--line);font-size:17px;line-height:1;cursor:pointer;box-shadow:0 2px 8px #0002;color:var(--text);display:flex;align-items:center;justify-content:center}
+#legend{position:fixed;left:10px;bottom:calc(56px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:6px;max-height:38vh;overflow:auto;pointer-events:auto}
+.chip{background:var(--chip);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:7px 10px;font-size:11.5px;cursor:pointer;white-space:nowrap}
+.chip.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+#panel{position:fixed;right:10px;bottom:calc(56px + env(safe-area-inset-bottom,0px));width:270px;max-width:calc(100vw - 20px);max-height:52vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 16px;box-shadow:0 6px 24px #0003;transform:translateY(20px);opacity:0;pointer-events:none;transition:.2s}
+#panel.show{transform:translateY(0);opacity:1;pointer-events:auto}
+#panel h3{margin:0 0 6px;font-size:15px}
+#panel .row{margin:5px 0;font-size:12px;color:var(--muted)}
+#panel .row b{color:var(--text);font-weight:600}
+#panel ol{margin:6px 0 0;padding-left:16px;font-size:11.5px}
+#panel ol li{margin:3px 0}
+#sectionBar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom,0px));background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:6px 14px;display:flex;align-items:center;gap:8px;pointer-events:auto;box-shadow:0 2px 10px #0002}
+#sectionBar input{width:130px}
+#sectionBar span{font-size:10.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="topbar"><div class="t">💡 Разбор ночника WebLamp</div><button class="btn" id="resetBtn">Сброс вида</button></div>
+<div id="hint">Тяни — вращение · Колесо/щипок — зум · Тап по детали — инфо · 👁 — список деталей</div>
+<div class="round" id="hudBtn" title="Скрыть/показать интерфейс">👁</div>
+<div id="zoomCtl"><div class="round" id="zin">+</div><div class="round" id="zout">–</div></div>
+<div id="legend"></div>
+<div id="sectionBar"><span>Сечение</span><input type="range" id="sect" min="0" max="100" value="0"></div>
+<div id="panel"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const PARTS={
+base:{name:'База (подставка)',dims:'⌀78→75 мм, высота 28 мм',material:'PLA/PETG (можно wood-fill)',thick:'стенка 2.4 мм (6 периметров)',steps:['Эскиз профиля + Операция вращения','Оболочка, стенка 2.4мм, открытый верх','4 бобышки под Wemos (⌀2мм)','Стойка-направляющая с пазом под провод','Канавка 10×2мм под LED-кольцо','Окно ⌀10.5мм под AM312','Окно 8.5×4мм под USB','Уступ под нахлёст диффузора']},
+diffuser:{name:'Диффузор-рассеиватель',dims:'⌀75→68 мм, высота 112 мм',material:'натуральный/opal PETG или PLA',thick:'стенка 1.0–1.2 мм',steps:['Vase Mode (Spiralize Outer Contour)','Слой 0.12–0.16мм, Wall Line Width 1.0–1.2мм','Скорость 25–35мм/с, обдув 100%','Мокрая шлифовка 400→2000','Матирующий спрей Frosted Glass']},
+top:{name:'Крышка-сенсор',dims:'диск ⌀60×10мм + ободок ⌀64×2мм',material:'тот же opal-пластик или дымчатый акрил',thick:'кнопка спрятана внутри; над сенсором ≤2мм',steps:['Печать крышки высотой 10мм с карманом снизу под TTP223','Ободок — хром-плёнка/спрей','Посадка на ступеньку диффузора']},
+led:{name:'LED-кольцо WS2812B',dims:'⌀68мм, шаг 16.66мм, ~13 LED',material:'адресная лента 60 LED/м',thick:'зазор до стенки ≥15-20мм',steps:['Отрезать ~13 LED (205-215мм)','Уложить в канавку базы, светом вверх','Пропаять VCC/GND/DIN с проводами']},
+wemos:{name:'Wemos D1 mini (ESP8266)',dims:'34.2×25.6мм, высота ≈11мм',material:'готовая плата',thick:'зазор от дна 4мм',steps:['Замерить реальные отверстия платы','Закрепить на бобышках М2×4','USB-порт напротив окна в стенке']},
+am312:{name:'Датчик движения AM312',dims:'линза ⌀10мм',material:'готовый модуль',thick:'окно в стенке ⌀10-10.5мм',steps:['Вклеить в окно термоклеем','Линза вровень с поверхностью','Направление — наружу от лампы']},
+ttp223:{name:'Сенсорная кнопка TTP223',dims:'плата ~14×24мм',material:'готовый модуль',thick:'зазор пластика ≤2мм',steps:['Приклеить в карман внутри крышки, платой вверх','Пластик над сенсором ≤2мм','Провод — в паз стойки-направляющей']},
+post:{name:'Стойка-направляющая провода',dims:'⌀5мм, высота ≈138мм от дна (≈110мм над верхней гранью базы)',material:'печатается заодно с базой',thick:'открытый паз 3×2мм',steps:['Выходит из верхней грани базы, растёт из её дна','Верх — на 2мм ниже крышки, не касается диффузора','Крючок наверху — запас провода 15-20мм']},
+wire:{name:'Проводка',dims:'26-28 AWG, разноцветные',material:'провод + термоусадка',thick:'—',steps:['Wemos → LED-кольцо (VCC/GND/DIN)','Wemos → TTP223 через паз стойки','Wemos → AM312 вдоль стенки базы']}
+};
+const scene=new THREE.Scene();
+const cam=new THREE.PerspectiveCamera(45,innerWidth/innerHeight,1,2000);
+const renderer=new THREE.WebGLRenderer({canvas:document.getElementById('c'),antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);renderer.localClippingEnabled=true;
+scene.add(new THREE.AmbientLight(0xffffff,0.65));
+const dl=new THREE.DirectionalLight(0xffffff,0.55);dl.position.set(120,220,140);scene.add(dl);
+const warm=new THREE.PointLight(0xffcf8a,1.3,220);warm.position.set(0,45,0);scene.add(warm);
+const plane=new THREE.Plane(new THREE.Vector3(1,0,0),40);
+const pickable=[];
+function mat(color,opts){const m=new THREE.MeshStandardMaterial(Object.assign({color:color},opts||{}));m.userData.baseEmissive=m.emissive.clone();return m;}
+function add(mesh,key,shell){mesh.userData.key=key;pickable.push(mesh);if(shell){mesh.material.clippingPlanes=[plane];mesh.material.side=THREE.DoubleSide;}scene.add(mesh);return mesh;}
+add(new THREE.Mesh(new THREE.CylinderGeometry(37.5,39,28,40),mat(0xd0873f,{roughness:.7})),'base',true).position.y=14;
+add(new THREE.Mesh(new THREE.CylinderGeometry(34,37.5,112,40,1,true),mat(0xffffff,{transparent:true,opacity:.4,depthWrite:false,emissive:0xffedd0,emissiveIntensity:.15})),'diffuser',true).position.y=84;
+add(new THREE.Mesh(new THREE.CylinderGeometry(30,30,10,40),mat(0x9a958c,{roughness:.5})),'top',true).position.y=145;
+const ring=add(new THREE.Mesh(new THREE.TorusGeometry(30,1.5,10,40),mat(0xd8d8d8,{metalness:1,roughness:.25})),'top',true);
+ring.position.y=148.5;ring.rotation.x=Math.PI/2;
+for(let i=0;i<13;i++){const a=i/13*Math.PI*2;const c=new THREE.Color().setHSL(i/13,0.85,0.6);
+ add(new THREE.Mesh(new THREE.SphereGeometry(1.7,12,12),mat(c,{emissive:c,emissiveIntensity:1})),'led').position.set(Math.cos(a)*32,30,Math.sin(a)*32);}
+add(new THREE.Mesh(new THREE.CylinderGeometry(2.5,2.5,138,16),mat(0xd8d2c5,{roughness:.8})),'post').position.y=69;
+add(new THREE.Mesh(new THREE.BoxGeometry(34.2,2.5,25.6),mat(0x2e7d4f,{roughness:.6})),'wemos').position.set(15,8,0);
+add(new THREE.Mesh(new THREE.BoxGeometry(18,9,12),mat(0x1f1f1f,{roughness:.5})),'wemos').position.set(15,13.7,0);
+add(new THREE.Mesh(new THREE.SphereGeometry(5,16,16),mat(0xf0ece0,{roughness:.6})),'am312').position.set(39,14,0);
+add(new THREE.Mesh(new THREE.BoxGeometry(14,3,24),mat(0x2255aa,{roughness:.5})),'ttp223').position.set(0,146.5,15);
+function wire(pts,color){const curve=new THREE.CatmullRomCurve3(pts.map(p=>new THREE.Vector3(...p)));
+ add(new THREE.Mesh(new THREE.TubeGeometry(curve,20,0.9,6,false),mat(color,{roughness:.6})),'wire');}
+wire([[15,9,0],[22,22,20],[0,30,32]],0xd94f4f);
+wire([[15,9,0],[8,26,0],[3.6,40,0],[3.6,132,0],[3,139,6],[0,145.5,15]],0xe0c34a);
+wire([[15,9,0],[30,12,0],[39,14,0]],0x333333);
+let radius=260,theta=0.9,phi=1.15;
+function updateCam(){cam.position.set(radius*Math.sin(phi)*Math.sin(theta),75+radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));cam.lookAt(0,75,0);}
+updateCam();
+const legend=document.getElementById('legend');
+Object.keys(PARTS).forEach(k=>{const b=document.createElement('div');b.className='chip';b.textContent=PARTS[k].name;b.dataset.key=k;b.onclick=()=>selectPart(k);legend.appendChild(b);});
+const panel=document.getElementById('panel');
+function selectPart(key){const p=PARTS[key];if(!p)return;
+ document.querySelectorAll('.chip').forEach(c=>c.classList.toggle('active',c.dataset.key===key));
+ panel.innerHTML='<h3>'+p.name+'</h3><div class="row"><b>Размеры:</b> '+p.dims+'</div><div class="row"><b>Материал:</b> '+p.material+'</div><div class="row"><b>Толщина/зазор:</b> '+p.thick+'</div><div class="row"><b>План создания:</b></div><ol>'+p.steps.map(s=>'<li>'+s+'</li>').join('')+'</ol>';
+ panel.classList.add('show');
+ pickable.forEach(m=>{if(m.userData.key===key)m.material.emissive.set(0xffd27a);else m.material.emissive.copy(m.material.userData.baseEmissive);});
+}
+const ray=new THREE.Raycaster();
+function handleTap(e){const rect=renderer.domElement.getBoundingClientRect();
+ const mx=((e.clientX-rect.left)/rect.width)*2-1,my=-((e.clientY-rect.top)/rect.height)*2+1;
+ ray.setFromCamera({x:mx,y:my},cam);const hits=ray.intersectObjects(pickable);
+ if(hits.length)selectPart(hits[0].object.userData.key);}
+let pointers={},lastDist=null,dragging=false,lastX=0,lastY=0,moved=false;
+const el=renderer.domElement;
+el.addEventListener('pointerdown',e=>{pointers[e.pointerId]={x:e.clientX,y:e.clientY};if(Object.keys(pointers).length===1){dragging=true;lastX=e.clientX;lastY=e.clientY;moved=false;}});
+el.addEventListener('pointermove',e=>{if(!pointers[e.pointerId])return;pointers[e.pointerId]={x:e.clientX,y:e.clientY};const ids=Object.keys(pointers);
+ if(ids.length===2){const p=Object.values(pointers);const dist=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);
+  if(lastDist){radius*=lastDist/dist;radius=Math.min(500,Math.max(35,radius));updateCam();}lastDist=dist;}
+ else if(dragging){const dx=e.clientX-lastX,dy=e.clientY-lastY;theta-=dx*0.008;phi-=dy*0.008;phi=Math.min(Math.PI-0.1,Math.max(0.1,phi));lastX=e.clientX;lastY=e.clientY;if(Math.abs(dx)+Math.abs(dy)>3)moved=true;updateCam();}});
+function endPointer(e){delete pointers[e.pointerId];if(Object.keys(pointers).length<2)lastDist=null;if(Object.keys(pointers).length===0){dragging=false;if(!moved)handleTap(e);}}
+el.addEventListener('pointerup',endPointer);el.addEventListener('pointercancel',endPointer);
+el.addEventListener('wheel',e=>{e.preventDefault();radius*=(1+e.deltaY*0.001);radius=Math.min(500,Math.max(35,radius));updateCam();},{passive:false});
+document.getElementById('hudBtn').onclick=function(){this.classList.toggle('on',document.body.classList.toggle('show-list'));};
+document.getElementById('zin').onclick=()=>{radius=Math.max(35,radius-30);updateCam();};
+document.getElementById('zout').onclick=()=>{radius=Math.min(500,radius+30);updateCam();};
+document.getElementById('sect').addEventListener('input',e=>{plane.constant=40-(e.target.value/100)*80;});
+document.getElementById('resetBtn').onclick=()=>{radius=260;theta=0.9;phi=1.15;document.getElementById('sect').value=0;plane.constant=40;updateCam();panel.classList.remove('show');document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));pickable.forEach(m=>m.material.emissive.copy(m.material.userData.baseEmissive));};
+window.addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+(function animate(){requestAnimationFrame(animate);renderer.render(scene,cam);})();
+</script>
+</body>
+</html>
